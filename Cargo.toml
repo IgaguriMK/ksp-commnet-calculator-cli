@@ -1,0 +1,18 @@
+[package]
+name = "ksp-commnet-calculator-cli"
+version = "0.1.0"
+description = "KSP CommNet Calculator (CLI)"
+authors = ["Igaguri <igagurimk@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+categories = ["simulation", "command-line-utilities"]
+keywords = ["kerbal_space_program", "ksp", "calculator"]
+readme = "README.md"
+documentation = "https://docs.rs/ksp-commnet-calculator-cli"
+repository = "https://github.com/IgaguriMK/ksp-commnet-calculator-cli"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "2.33"
+ksp-commnet-calculator-core = "0.1.2"
