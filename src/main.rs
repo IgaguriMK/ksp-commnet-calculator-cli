@@ -35,6 +35,14 @@ fn w_main() -> Result<(), Error> {
                 .takes_value(true),
         )
         .arg(
+            Arg::with_name("load")
+                .short("l")
+                .long("load")
+                .multiple(true)
+                .takes_value(true)
+                .help("Load additional antennas difinition file (*.json, *.yaml)"),
+        )
+        .arg(
             Arg::with_name("antennas")
                 .short("A")
                 .long("antennas")
@@ -43,6 +51,12 @@ fn w_main() -> Result<(), Error> {
         .get_matches();
 
     let mut runner = Runner::new();
+
+    if let Some(values) = matches.values_of("load") {
+        for path in values {
+            runner.load_antennas(path)?;
+        }
+    }
 
     if matches.is_present("antennas") {
         print_antennas(runner.antennas());
