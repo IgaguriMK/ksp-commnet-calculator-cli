@@ -1,6 +1,7 @@
 use clap::{crate_authors, crate_name, crate_version, App, Arg};
 
 use ksp_commnet_calculator_core::error::{Error, MessageError};
+use ksp_commnet_calculator_core::model::antenna::Antennas;
 use ksp_commnet_calculator_core::model::vessel::EndpointInfo;
 use ksp_commnet_calculator_core::usecase::distance::{Output, Runner};
 use ksp_commnet_calculator_core::util::MetricPrefix;
@@ -44,7 +45,7 @@ fn w_main() -> Result<(), Error> {
     let mut runner = Runner::new();
 
     if matches.is_present("antennas") {
-        runner.antenna_list();
+        print_antennas(runner.antennas());
         return Ok(());
     }
 
@@ -78,6 +79,24 @@ fn split_antenna_arg(s: &str) -> Result<(usize, &str), Error> {
             s
         ))
         .into()),
+    }
+}
+
+fn print_antennas(antennas: &Antennas) {
+    println!("Available antennas:");
+    for a in antennas.names() {
+        print!("    {}", a.name);
+        if !a.aliases.is_empty() {
+            print!(" (");
+            for (i, al) in a.aliases.iter().enumerate() {
+                if i > 0 {
+                    print!(", ");
+                }
+                print!("{}", al);
+            }
+            print!(")");
+        }
+        println!();
     }
 }
 
