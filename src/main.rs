@@ -1,4 +1,4 @@
-use clap::{crate_authors, crate_name, crate_version, App, Arg};
+use clap::{crate_name, App, Arg};
 
 use ksp_commnet_calculator_core::error::{Error, MessageError};
 use ksp_commnet_calculator_core::model::antenna::Antennas;
@@ -17,8 +17,6 @@ fn main() {
 
 fn w_main() -> Result<(), Error> {
     let matches = App::new(crate_name!())
-        .author(crate_authors!("\n"))
-        .version(crate_version!())
         .arg(
             Arg::with_name("from")
                 .short("f")
@@ -115,35 +113,37 @@ fn print_antennas(antennas: &Antennas) {
 }
 
 fn print_res(res: &Output) {
-    println!("From:");
+    println!();
+    println!(" From:");
     print_endpoint(&res.endpoints.from);
-    println!("To:");
+    println!(" To:");
     print_endpoint(&res.endpoints.to);
     println!();
 
-    println!("Max distance: {}m", MetricPrefix(res.max_distance));
+    println!(" Max distance: {}m", MetricPrefix(res.max_distance));
     println!();
 
-    println!("|          Section          |   @Min   |   @Max   |");
-    println!("|:--------------------------|---------:|---------:|");
+    println!(" |          Section          |   @Min   |   @Max   |");
+    println!(" |:--------------------------|---------:|---------:|");
     for strength in &res.signal_strengthes {
         println!(
-            "| {:<25} | {:>8} | {:>8} |",
+            " | {:<25} | {:>8} | {:>8} |",
             strength.section,
             format_strength(strength.at_min),
             format_strength(strength.at_max),
         );
     }
+    println!();
 }
 
 fn print_endpoint(endpoint: &EndpointInfo) {
-    println!("{}:", endpoint.endpoint_type);
+    println!(" {}:", endpoint.endpoint_type);
 
     for (c, a) in &endpoint.antennas {
         if *c == 1 {
-            println!("{}{}{}", INDENT, INDENT, a.name);
+            println!(" {}{}{}", INDENT, INDENT, a.name);
         } else {
-            println!("{}{}{}x {}", INDENT, INDENT, *c, a.name);
+            println!(" {}{}{}x {}", INDENT, INDENT, *c, a.name);
         }
     }
 }
