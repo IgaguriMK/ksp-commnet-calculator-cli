@@ -1,0 +1,16 @@
+-
+  name: Communotron DTS-M1
+  aliases:
+    - DTS-M1
+  power: 2000000000
+  combine: false
+  combine_exp: 0.0
+  relay: false
+-
+  name: Communotron 88-88
+  aliases:
+    - 88-88
+  power: 10000000000
+  combine: false
+  combine_exp: 0.0
+  relay: false

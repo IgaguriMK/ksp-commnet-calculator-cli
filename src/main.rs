@@ -1,11 +1,15 @@
-use clap::{crate_authors, crate_name, crate_version, App, Arg};
+use anyhow::{Error, Result};
+use clap::{crate_name, App, Arg, ArgMatches};
 
-use ksp_commnet_calculator_core::error::{Error, MessageError};
-use ksp_commnet_calculator_core::model::vessel::EndpointInfo;
-use ksp_commnet_calculator_core::usecase::distance::{Output, Runner};
+use ksp_commnet_calculator_core::antenna::Antennas;
+use ksp_commnet_calculator_core::distance::Distances;
+use ksp_commnet_calculator_core::endpoint::Endpoint;
 use ksp_commnet_calculator_core::util::MetricPrefix;
 
 const INDENT: &str = "    ";
+
+const DEFAULT_FROM: &str = "DSN Lv.3";
+const DEFAULT_TO: &str = "Command Module";
 
 fn main() {
     if let Err(e) = w_main() {
@@ -14,10 +18,8 @@ fn main() {
     }
 }
 
-fn w_main() -> Result<(), Error> {
+fn w_main() -> Result<()> {
     let matches = App::new(crate_name!())
-        .author(crate_authors!("\n"))
-        .version(crate_version!())
         .arg(
             Arg::with_name("from")
                 .short("f")
@@ -41,30 +43,94 @@ fn w_main() -> Result<(), Error> {
         )
         .get_matches();
 
-    let mut runner = Runner::new();
+    let antennas = Antennas::new();
 
     if matches.is_present("antennas") {
-        runner.antenna_list();
+        print_antennas(&antennas);
         return Ok(());
     }
 
+    print_dists(matches, antennas)
+}
+
+fn print_antennas(antennas: &Antennas) {
+    println!("Available antennas:");
+    for a in antennas.iter() {
+        print!("    {}", a.name);
+        if !a.aliases.is_empty() {
+            print!(" (");
+            for (i, al) in a.aliases.iter().enumerate() {
+                if i > 0 {
+                    print!(", ");
+                }
+                print!("{}", al);
+            }
+            print!(")");
+        }
+        println!();
+    }
+}
+
+fn print_dists(matches: ArgMatches, antennas: Antennas) -> Result<()> {
+    let mut from = Endpoint::new();
     for antenna_str in matches.values_of("from").unwrap_or_default() {
-        let (c, n) = split_antenna_arg(antenna_str)?;
-        runner.add_from_vessel_antenna(c, n)?;
+        let (count, antenna_name) = split_antenna_arg(antenna_str)?;
+        if let Some(antenna) = antennas.get(antenna_name) {
+            from.add_antenna(antenna.clone(), count)
+        }
+    }
+    if from.is_empty() {
+        let a = antennas
+            .get(DEFAULT_FROM)
+            .expect("Default 'from' endpoint antenna not exists");
+        from.add_antenna(a.clone(), 1);
     }
 
+    let mut to = Endpoint::new();
     for antenna_str in matches.values_of("to").unwrap_or_default() {
-        let (c, n) = split_antenna_arg(antenna_str)?;
-        runner.add_to_vessel_antenna(c, n)?;
+        let (count, antenna_name) = split_antenna_arg(antenna_str)?;
+        if let Some(antenna) = antennas.get(antenna_name) {
+            to.add_antenna(antenna.clone(), count)
+        }
+    }
+    if to.is_empty() {
+        let a = antennas
+            .get(DEFAULT_TO)
+            .expect("Default 'to' endpoint antenna not exists");
+        to.add_antenna(a.clone(), 1);
     }
 
-    let output = runner.run()?;
-    print_res(&output);
+    let range = from.range_to(&to);
+
+    println!();
+    println!(" From:");
+    print_endpoint(&from);
+    println!(" To:");
+    print_endpoint(&to);
+    println!();
+
+    println!(" Max distance: {}m", MetricPrefix(range.max_distance()));
+    println!();
+
+    let dists = Distances::new();
+    let strengths = dists.get_strengthes(range);
+
+    println!(" |          Section          |   @Min   |   @Max   |");
+    println!(" |:--------------------------|---------:|---------:|");
+    for strength in &strengths {
+        println!(
+            " | {:<25} | {:>8} | {:>8} |",
+            strength.section,
+            format_strength(strength.at_min),
+            format_strength(strength.at_max),
+        );
+    }
+    println!();
 
     Ok(())
 }
 
-fn split_antenna_arg(s: &str) -> Result<(usize, &str), Error> {
+fn split_antenna_arg(s: &str) -> Result<(usize, &str)> {
     let parts: Vec<&str> = s.split(':').collect();
 
     match parts.len() {
@@ -73,7 +139,7 @@ fn split_antenna_arg(s: &str) -> Result<(usize, &str), Error> {
             let n = parts[1].parse()?;
             Ok((n, parts[0]))
         }
-        _ => Err(MessageError::new(format!(
+        _ => Err(Error::msg(format!(
             "antenna specifier should be [<NUMBER_OF_ANTENNA>:]<ANTENNA_NAME>, but {}",
             s
         ))
@@ -81,36 +147,17 @@ fn split_antenna_arg(s: &str) -> Result<(usize, &str), Error> {
     }
 }
 
-fn print_res(res: &Output) {
-    println!("From:");
-    print_endpoint(&res.endpoints.from);
-    println!("To:");
-    print_endpoint(&res.endpoints.to);
-    println!();
+fn print_endpoint(endpoint: &Endpoint) {
+    println!(" {}:", endpoint.endpoint_type());
 
-    println!("Max distance: {}m", MetricPrefix(res.max_distance));
-    println!();
+    println!(" {}Power: {}", INDENT, MetricPrefix(endpoint.power()));
 
-    println!("|          Section          |   @Min   |   @Max   |");
-    println!("|:--------------------------|---------:|---------:|");
-    for strength in &res.signal_strengthes {
-        println!(
-            "| {:<25} | {:>8} | {:>8} |",
-            strength.section,
-            format_strength(strength.at_min),
-            format_strength(strength.at_max),
-        );
-    }
-}
-
-fn print_endpoint(endpoint: &EndpointInfo) {
-    println!("{}:", endpoint.endpoint_type);
-
-    for (c, a) in &endpoint.antennas {
-        if *c == 1 {
-            println!("{}{}{}", INDENT, INDENT, a.name);
+    println!(" {}Antennae:", INDENT);
+    for (a, c) in endpoint.antenna_counts() {
+        if c == 1 {
+            println!(" {}{}{}", INDENT, INDENT, a.name);
         } else {
-            println!("{}{}{}x {}", INDENT, INDENT, *c, a.name);
+            println!(" {}{}{}x {}", INDENT, INDENT, c, a.name);
         }
     }
 }
