@@ -142,8 +142,7 @@ fn split_antenna_arg(s: &str) -> Result<(usize, &str)> {
         _ => Err(Error::msg(format!(
             "antenna specifier should be [<NUMBER_OF_ANTENNA>:]<ANTENNA_NAME>, but {}",
             s
-        ))
-        .into()),
+        ))),
     }
 }
 
