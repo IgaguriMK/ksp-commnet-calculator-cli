@@ -1,12 +1,15 @@
-use clap::{crate_name, App, Arg};
+use anyhow::{Error, Result};
+use clap::{crate_name, App, Arg, ArgMatches};
 
-use ksp_commnet_calculator_core::error::{Error, MessageError};
-use ksp_commnet_calculator_core::model::antenna::Antennas;
-use ksp_commnet_calculator_core::model::vessel::EndpointInfo;
-use ksp_commnet_calculator_core::usecase::distance::{Output, Runner};
+use ksp_commnet_calculator_core::antenna::Antennas;
+use ksp_commnet_calculator_core::distance::Distances;
+use ksp_commnet_calculator_core::endpoint::Endpoint;
 use ksp_commnet_calculator_core::util::MetricPrefix;
 
 const INDENT: &str = "    ";
+
+const DEFAULT_FROM: &str = "DSN Lv.3";
+const DEFAULT_TO: &str = "Command Module";
 
 fn main() {
     if let Err(e) = w_main() {
@@ -15,7 +18,7 @@ fn main() {
     }
 }
 
-fn w_main() -> Result<(), Error> {
+fn w_main() -> Result<()> {
     let matches = App::new(crate_name!())
         .arg(
             Arg::with_name("from")
@@ -33,14 +36,6 @@ fn w_main() -> Result<(), Error> {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("load")
-                .short("l")
-                .long("load")
-                .multiple(true)
-                .takes_value(true)
-                .help("Load additional antennas difinition file (*.json, *.yaml)"),
-        )
-        .arg(
             Arg::with_name("antennas")
                 .short("A")
                 .long("antennas")
@@ -48,55 +43,19 @@ fn w_main() -> Result<(), Error> {
         )
         .get_matches();
 
-    let mut runner = Runner::new();
-
-    if let Some(values) = matches.values_of("load") {
-        for path in values {
-            runner.load_antennas(path)?;
-        }
-    }
+    let antennas = Antennas::new();
 
     if matches.is_present("antennas") {
-        print_antennas(runner.antennas());
+        print_antennas(&antennas);
         return Ok(());
     }
 
-    for antenna_str in matches.values_of("from").unwrap_or_default() {
-        let (c, n) = split_antenna_arg(antenna_str)?;
-        runner.add_from_vessel_antenna(c, n)?;
-    }
-
-    for antenna_str in matches.values_of("to").unwrap_or_default() {
-        let (c, n) = split_antenna_arg(antenna_str)?;
-        runner.add_to_vessel_antenna(c, n)?;
-    }
-
-    let output = runner.run()?;
-    print_res(&output);
-
-    Ok(())
-}
-
-fn split_antenna_arg(s: &str) -> Result<(usize, &str), Error> {
-    let parts: Vec<&str> = s.split(':').collect();
-
-    match parts.len() {
-        1 => Ok((1, parts[0])),
-        2 => {
-            let n = parts[1].parse()?;
-            Ok((n, parts[0]))
-        }
-        _ => Err(MessageError::new(format!(
-            "antenna specifier should be [<NUMBER_OF_ANTENNA>:]<ANTENNA_NAME>, but {}",
-            s
-        ))
-        .into()),
-    }
+    print_dists(matches, antennas)
 }
 
 fn print_antennas(antennas: &Antennas) {
     println!("Available antennas:");
-    for a in antennas.names() {
+    for a in antennas.iter() {
         print!("    {}", a.name);
         if !a.aliases.is_empty() {
             print!(" (");
@@ -112,20 +71,53 @@ fn print_antennas(antennas: &Antennas) {
     }
 }
 
-fn print_res(res: &Output) {
+fn print_dists(matches: ArgMatches, antennas: Antennas) -> Result<()> {
+    let mut from = Endpoint::new();
+    for antenna_str in matches.values_of("from").unwrap_or_default() {
+        let (count, antenna_name) = split_antenna_arg(antenna_str)?;
+        if let Some(antenna) = antennas.get(antenna_name) {
+            from.add_antenna(antenna.clone(), count)
+        }
+    }
+    if from.is_empty() {
+        let a = antennas
+            .get(DEFAULT_FROM)
+            .expect("Default 'from' endpoint antenna not exists");
+        from.add_antenna(a.clone(), 1);
+    }
+
+    let mut to = Endpoint::new();
+    for antenna_str in matches.values_of("to").unwrap_or_default() {
+        let (count, antenna_name) = split_antenna_arg(antenna_str)?;
+        if let Some(antenna) = antennas.get(antenna_name) {
+            to.add_antenna(antenna.clone(), count)
+        }
+    }
+    if to.is_empty() {
+        let a = antennas
+            .get(DEFAULT_TO)
+            .expect("Default 'to' endpoint antenna not exists");
+        to.add_antenna(a.clone(), 1);
+    }
+
+    let range = from.range_to(&to);
+
     println!();
     println!(" From:");
-    print_endpoint(&res.endpoints.from);
+    print_endpoint(&from);
     println!(" To:");
-    print_endpoint(&res.endpoints.to);
+    print_endpoint(&to);
     println!();
 
-    println!(" Max distance: {}m", MetricPrefix(res.max_distance));
+    println!(" Max distance: {}m", MetricPrefix(range.max_distance()));
     println!();
+
+    let dists = Distances::new();
+    let strengths = dists.get_strengthes(range);
 
     println!(" |          Section          |   @Min   |   @Max   |");
     println!(" |:--------------------------|---------:|---------:|");
-    for strength in &res.signal_strengthes {
+    for strength in &strengths {
         println!(
             " | {:<25} | {:>8} | {:>8} |",
             strength.section,
@@ -134,16 +126,38 @@ fn print_res(res: &Output) {
         );
     }
     println!();
+
+    Ok(())
 }
 
-fn print_endpoint(endpoint: &EndpointInfo) {
-    println!(" {}:", endpoint.endpoint_type);
+fn split_antenna_arg(s: &str) -> Result<(usize, &str)> {
+    let parts: Vec<&str> = s.split(':').collect();
 
-    for (c, a) in &endpoint.antennas {
-        if *c == 1 {
+    match parts.len() {
+        1 => Ok((1, parts[0])),
+        2 => {
+            let n = parts[1].parse()?;
+            Ok((n, parts[0]))
+        }
+        _ => Err(Error::msg(format!(
+            "antenna specifier should be [<NUMBER_OF_ANTENNA>:]<ANTENNA_NAME>, but {}",
+            s
+        ))
+        .into()),
+    }
+}
+
+fn print_endpoint(endpoint: &Endpoint) {
+    println!(" {}:", endpoint.endpoint_type());
+
+    println!(" {}Power: {}", INDENT, MetricPrefix(endpoint.power()));
+
+    println!(" {}Antennae:", INDENT);
+    for (a, c) in endpoint.antenna_counts() {
+        if c == 1 {
             println!(" {}{}{}", INDENT, INDENT, a.name);
         } else {
-            println!(" {}{}{}x {}", INDENT, INDENT, *c, a.name);
+            println!(" {}{}{}x {}", INDENT, INDENT, c, a.name);
         }
     }
 }

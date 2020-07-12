@@ -1,6 +1,6 @@
 [package]
 name = "ksp-commnet-calculator-cli"
-version = "0.1.2"
+version = "0.2.0"
 description = "KSP CommNet Calculator (CLI)"
 authors = ["Igaguri <igagurimk@gmail.com>"]
 edition = "2018"
@@ -14,5 +14,6 @@ repository = "https://github.com/IgaguriMK/ksp-commnet-calculator-cli"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
 clap = "2.33"
-ksp-commnet-calculator-core = "0.1.5"
+ksp-commnet-calculator-core = {version = "0.2.0", path = "../core"}
